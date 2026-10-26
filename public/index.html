@@ -1,0 +1,243 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Student Attendance Management</title>
+  <style>
+    * { box-sizing: border-box; }
+    body { margin: 0; font-family: Arial, sans-serif; background: #f3f6fa; color: #1f2937; }
+    header { background: #173b67; color: white; padding: 22px 5%; }
+    header h1 { margin: 0 0 6px; font-size: 24px; }
+    header p { margin: 0; color: #e5edf8; }
+    main { max-width: 1200px; margin: 24px auto; padding: 0 16px; }
+    section { background: white; padding: 18px; margin-bottom: 20px; border-radius: 10px; box-shadow: 0 2px 8px #0000000d; }
+    h2 { margin-top: 0; font-size: 19px; }
+    .form-row { display: flex; flex-wrap: wrap; gap: 10px; align-items: end; }
+    label { display: block; font-size: 13px; margin-bottom: 5px; color: #475569; }
+    input, select, button { padding: 10px; border: 1px solid #cbd5e1; border-radius: 6px; font-size: 14px; }
+    input { min-width: 140px; }
+    button { cursor: pointer; border: 0; background: #2563eb; color: white; }
+    button.secondary { background: #475569; }
+    button.good { background: #15803d; }
+    button.warning { background: #b45309; }
+    .actions { display: flex; flex-wrap: wrap; gap: 8px; margin: 12px 0; }
+    .table-wrap { overflow-x: auto; }
+    table { border-collapse: collapse; width: 100%; min-width: 780px; }
+    th, td { border-bottom: 1px solid #e2e8f0; padding: 9px; text-align: left; font-size: 13px; }
+    th { background: #eff6ff; }
+    td select { width: 100%; min-width: 95px; }
+    .message { margin-top: 10px; font-size: 14px; }
+    .error { color: #b91c1c; }
+    .success { color: #15803d; }
+    .small { color: #64748b; font-size: 13px; }
+    .low { color: #b91c1c; font-weight: bold; }
+    .empty { padding: 15px; color: #64748b; text-align: center; }
+  </style>
+</head>
+<body>
+  <header>
+    <h1>Student Attendance Management System</h1>
+    <p>Daily attendance for seven periods and monthly attendance reports</p>
+  </header>
+  <main>
+    <section>
+      <h2>1. Add Student</h2>
+      <form id="studentForm" class="form-row">
+        <div><label for="roll">Roll Number</label><input id="roll" required placeholder="e.g. 101"></div>
+        <div><label for="name">Student Name</label><input id="name" required placeholder="e.g. Ravi Kumar"></div>
+        <div><label for="department">Department</label><input id="department" required placeholder="e.g. CSE AI&ML"></div>
+        <button type="submit">Add Student</button>
+      </form>
+      <div id="studentMessage" class="message"></div>
+    </section>
+
+    <section>
+      <h2>2. Mark Daily Attendance</h2>
+      <div class="form-row">
+        <div><label for="attendanceDate">Attendance Date</label><input type="date" id="attendanceDate"></div>
+      </div>
+      <div class="actions">
+        <button type="button" class="good" id="allPresent">Mark All Present</button>
+        <button type="button" class="warning" id="allAbsent">Mark All Absent</button>
+        <button type="button" id="saveAttendance">Save Attendance</button>
+      </div>
+      <div class="table-wrap" id="attendanceTable"></div>
+      <div id="attendanceMessage" class="message"></div>
+      <p class="small">Each period must be marked Present or Absent before saving. Data is stored in attendance-data.json.</p>
+    </section>
+
+    <section>
+      <h2>3. Monthly Attendance Report</h2>
+      <div class="form-row">
+        <div><label for="reportMonth">Select Month</label><input type="month" id="reportMonth"></div>
+        <button type="button" id="generateReport">Generate Report</button>
+        <button type="button" class="secondary" id="exportCsv">Export CSV</button>
+      </div>
+      <div class="table-wrap" id="reportTable"></div>
+      <div id="reportMessage" class="message"></div>
+    </section>
+  </main>
+<script>
+  let students = [];
+  let lastReport = [];
+
+  const today = new Date();
+  const localDate = `${today.getFullYear()}-${String(today.getMonth()+1).padStart(2,'0')}-${String(today.getDate()).padStart(2,'0')}`;
+  document.getElementById("attendanceDate").value = localDate;
+  document.getElementById("reportMonth").value = localDate.slice(0, 7);
+
+  async function loadData() {
+    const response = await fetch("/api/data");
+    const data = await response.json();
+    students = data.students || [];
+    renderAttendance(data.attendance || {});
+  }
+
+  function showMessage(id, message, success = true) {
+    const element = document.getElementById(id);
+    element.textContent = message;
+    element.className = "message " + (success ? "success" : "error");
+  }
+
+  function renderAttendance(savedAttendance = {}) {
+    const date = document.getElementById("attendanceDate").value;
+    const records = savedAttendance[date] || {};
+    const container = document.getElementById("attendanceTable");
+
+    if (!students.length) {
+      container.innerHTML = '<div class="empty">No students added yet. Add at least one student above.</div>';
+      return;
+    }
+
+    let html = '<table><thead><tr><th>Roll No.</th><th>Name</th>';
+    for (let p = 1; p <= 7; p++) html += `<th>Period ${p}</th>`;
+    html += '</tr></thead><tbody>';
+
+    for (const student of students) {
+      html += `<tr><td>${escapeHtml(student.roll)}</td><td>${escapeHtml(student.name)}</td>`;
+      for (let p = 0; p < 7; p++) {
+        const value = records[student.roll]?.[p] || "Present";
+        html += `<td><select data-roll="${escapeHtml(student.roll)}" data-period="${p}">
+          <option value="Present" ${value === "Present" ? "selected" : ""}>Present</option>
+          <option value="Absent" ${value === "Absent" ? "selected" : ""}>Absent</option>
+        </select></td>`;
+      }
+      html += '</tr>';
+    }
+    html += '</tbody></table>';
+    container.innerHTML = html;
+  }
+
+  function escapeHtml(value) {
+    return String(value).replace(/[&<>"']/g, ch => ({
+      "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;"
+    })[ch]);
+  }
+
+  document.getElementById("studentForm").addEventListener("submit", async event => {
+    event.preventDefault();
+    const student = {
+      roll: document.getElementById("roll").value.trim(),
+      name: document.getElementById("name").value.trim(),
+      department: document.getElementById("department").value.trim()
+    };
+    try {
+      const response = await fetch("/api/students", {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(student)
+      });
+      const result = await response.json();
+      if (!response.ok) throw new Error(result.error || "Could not add student.");
+      document.getElementById("studentForm").reset();
+      showMessage("studentMessage", "Student added successfully.");
+      await loadData();
+    } catch (error) {
+      showMessage("studentMessage", error.message, false);
+    }
+  });
+
+  document.getElementById("attendanceDate").addEventListener("change", loadData);
+
+  function setAll(status) {
+    document.querySelectorAll("#attendanceTable select").forEach(select => select.value = status);
+  }
+  document.getElementById("allPresent").addEventListener("click", () => setAll("Present"));
+  document.getElementById("allAbsent").addEventListener("click", () => setAll("Absent"));
+
+  document.getElementById("saveAttendance").addEventListener("click", async () => {
+    const date = document.getElementById("attendanceDate").value;
+    if (!date) return showMessage("attendanceMessage", "Please select a date.", false);
+    const recordsByRoll = {};
+    document.querySelectorAll("#attendanceTable select").forEach(select => {
+      const roll = select.dataset.roll;
+      const period = Number(select.dataset.period);
+      if (!recordsByRoll[roll]) recordsByRoll[roll] = Array(7).fill("Present");
+      recordsByRoll[roll][period] = select.value;
+    });
+    const records = Object.entries(recordsByRoll).map(([roll, periods]) => ({ roll, periods }));
+    try {
+      const response = await fetch("/api/attendance", {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ date, records })
+      });
+      const result = await response.json();
+      if (!response.ok) throw new Error(result.error || "Could not save attendance.");
+      showMessage("attendanceMessage", result.message);
+    } catch (error) {
+      showMessage("attendanceMessage", error.message, false);
+    }
+  });
+
+  document.getElementById("generateReport").addEventListener("click", async () => {
+    const month = document.getElementById("reportMonth").value;
+    if (!month) return showMessage("reportMessage", "Please select a month.", false);
+    try {
+      const response = await fetch(`/api/monthly?month=${encodeURIComponent(month)}`);
+      const result = await response.json();
+      if (!response.ok) throw new Error(result.error || "Could not generate report.");
+      lastReport = result.report;
+      renderReport(lastReport);
+      showMessage("reportMessage", `Report generated for ${month}.`);
+    } catch (error) {
+      showMessage("reportMessage", error.message, false);
+    }
+  });
+
+  function renderReport(report) {
+    const container = document.getElementById("reportTable");
+    if (!report.length) {
+      container.innerHTML = '<div class="empty">No students found.</div>';
+      return;
+    }
+    let html = '<table><thead><tr><th>Roll No.</th><th>Name</th><th>Department</th><th>Working Periods</th><th>Present</th><th>Absent</th><th>Attendance %</th></tr></thead><tbody>';
+    for (const s of report) {
+      html += `<tr><td>${escapeHtml(s.roll)}</td><td>${escapeHtml(s.name)}</td><td>${escapeHtml(s.department)}</td>
+        <td>${s.working}</td><td>${s.attended}</td><td>${s.absent}</td>
+        <td class="${s.working && s.percentage < 75 ? 'low' : ''}">${s.percentage}% ${s.working && s.percentage < 75 ? '(Below 75%)' : ''}</td></tr>`;
+    }
+    html += '</tbody></table>';
+    container.innerHTML = html;
+  }
+
+  document.getElementById("exportCsv").addEventListener("click", () => {
+    if (!lastReport.length) {
+      showMessage("reportMessage", "Generate a report before exporting CSV.", false);
+      return;
+    }
+    const rows = [["Roll Number","Name","Department","Working Periods","Present","Absent","Attendance Percentage"]];
+    lastReport.forEach(s => rows.push([s.roll,s.name,s.department,s.working,s.attended,s.absent,s.percentage]));
+    const csv = rows.map(row => row.map(value => `"${String(value).replace(/"/g, '""')}"`).join(",")).join("\r\n");
+    const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    link.href = url;
+    link.download = `attendance-${document.getElementById("reportMonth").value}.csv`;
+    link.click();
+    URL.revokeObjectURL(url);
+  });
+
+  loadData().catch(error => showMessage("attendanceMessage", "Could not connect to server. Is it running?", false));
+</script>
+</body>
+</html>

@@ -4,7 +4,9 @@ const path = require("path");
 
 const app = express();
 const PORT = process.env.PORT || 3000;
-const DATA_FILE = path.join(__dirname, "attendance-data.json");
+const DATA_DIR = process.env.DATA_DIR || __dirname;
+fs.mkdirSync(DATA_DIR, { recursive: true });
+const DATA_FILE = path.join(DATA_DIR, "attendance-data.json");
 
 app.use(express.json());
 app.use(express.static(path.join(__dirname, "public")));
@@ -46,6 +48,39 @@ app.post("/api/students", (req, res) => {
   writeData(data);
   res.status(201).json({ message: "Student added.", students: data.students });
 });
+
+app.put("/api/students/:roll", (req, res) => {
+  const roll = req.params.roll;
+  const name = String(req.body.name || "").trim();
+  const department = String(req.body.department || "").trim();
+
+  if (!name || !department) {
+    return res.status(400).json({
+      error: "Name and department are required."
+    });
+  }
+
+  const data = readData();
+
+  const student = data.students.find(s => s.roll === roll);
+
+  if (!student) {
+    return res.status(404).json({
+      error: "Student not found."
+    });
+  }
+
+  student.name = name;
+  student.department = department;
+
+  writeData(data);
+
+  res.json({
+    message: "Student details updated successfully.",
+    students: data.students
+  });
+});
+
 
 app.post("/api/attendance", (req, res) => {
   const { date, records } = req.body;

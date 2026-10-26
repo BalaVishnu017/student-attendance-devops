@@ -50,6 +50,7 @@
         <button type="submit">Add Student</button>
       </form>
       <div id="studentMessage" class="message"></div>
+      <div class="table-wrap" id="studentTable"></div>
     </section>
 
     <section>
@@ -80,6 +81,7 @@
   </main>
 <script>
   let students = [];
+  let editingRoll = null;
   let lastReport = [];
 
   const today = new Date();
@@ -87,12 +89,81 @@
   document.getElementById("attendanceDate").value = localDate;
   document.getElementById("reportMonth").value = localDate.slice(0, 7);
 
-  async function loadData() {
-    const response = await fetch("/api/data");
-    const data = await response.json();
-    students = data.students || [];
-    renderAttendance(data.attendance || {});
+async function loadData() {
+  const response = await fetch("/api/data");
+  const data = await response.json();
+
+  students = data.students || [];
+
+  renderStudents();
+  renderAttendance(data.attendance || {});
+}
+
+function renderStudents() {
+  const container = document.getElementById("studentTable");
+
+  if (students.length === 0) {
+    container.innerHTML = '<div class="empty">No students added yet.</div>';
+    return;
   }
+
+  let html = `
+    <table>
+      <thead>
+        <tr>
+          <th>Roll Number</th>
+          <th>Name</th>
+          <th>Department</th>
+          <th>Action</th>
+        </tr>
+      </thead>
+      <tbody>
+  `;
+
+  for (const student of students) {
+    html += `
+      <tr>
+        <td>${escapeHtml(student.roll)}</td>
+        <td>${escapeHtml(student.name)}</td>
+        <td>${escapeHtml(student.department)}</td>
+        <td>
+          <button type="button"
+            onclick="editStudent('${encodeURIComponent(student.roll)}')">
+            Edit
+          </button>
+        </td>
+      </tr>
+    `;
+  }
+
+  html += "</tbody></table>";
+  container.innerHTML = html;
+}
+
+function editStudent(encodedRoll) {
+  const roll = decodeURIComponent(encodedRoll);
+  const student = students.find(s => s.roll === roll);
+
+  if (!student) return;
+
+  editingRoll = roll;
+
+  document.getElementById("roll").value = student.roll;
+  document.getElementById("roll").disabled = true;
+  document.getElementById("name").value = student.name;
+  document.getElementById("department").value = student.department;
+
+  document.querySelector(
+    '#studentForm button[type="submit"]'
+  ).textContent = "Update Student";
+
+  showMessage(
+    "studentMessage",
+    "Edit the details and click Update Student."
+  );
+}
+
+
 
   function showMessage(id, message, success = true) {
     const element = document.getElementById(id);
@@ -135,27 +206,57 @@
     })[ch]);
   }
 
-  document.getElementById("studentForm").addEventListener("submit", async event => {
-    event.preventDefault();
-    const student = {
-      roll: document.getElementById("roll").value.trim(),
-      name: document.getElementById("name").value.trim(),
-      department: document.getElementById("department").value.trim()
-    };
-    try {
-      const response = await fetch("/api/students", {
-        method: "POST", headers: { "Content-Type": "application/json" },
+  
+document.getElementById("studentForm").addEventListener("submit", async event => {
+  event.preventDefault();
+
+  const student = {
+    roll: document.getElementById("roll").value.trim(),
+    name: document.getElementById("name").value.trim(),
+    department: document.getElementById("department").value.trim()
+  };
+
+  try {
+    const isEditing = editingRoll !== null;
+
+    const response = await fetch(
+      isEditing
+        ? `/api/students/${encodeURIComponent(editingRoll)}`
+        : "/api/students",
+      {
+        method: isEditing ? "PUT" : "POST",
+        headers: { "Content-Type": "application/json" },
         body: JSON.stringify(student)
-      });
-      const result = await response.json();
-      if (!response.ok) throw new Error(result.error || "Could not add student.");
-      document.getElementById("studentForm").reset();
-      showMessage("studentMessage", "Student added successfully.");
-      await loadData();
-    } catch (error) {
-      showMessage("studentMessage", error.message, false);
+      }
+    );
+
+    const result = await response.json();
+
+    if (!response.ok) {
+      throw new Error(result.error || "Could not save student.");
     }
-  });
+
+    editingRoll = null;
+
+    document.getElementById("studentForm").reset();
+    document.getElementById("roll").disabled = false;
+
+    document.querySelector(
+      '#studentForm button[type="submit"]'
+    ).textContent = "Add Student";
+
+    showMessage(
+      "studentMessage",
+      result.message || "Student added successfully."
+    );
+
+    await loadData();
+
+  } catch (error) {
+    showMessage("studentMessage", error.message, false);
+  }
+});
+
 
   document.getElementById("attendanceDate").addEventListener("change", loadData);
 

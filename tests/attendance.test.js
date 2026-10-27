@@ -2,25 +2,40 @@
 const { Builder, By, until } = require("selenium-webdriver");
 const assert = require("assert");
 
-(async function testAttendanceApp() {
-    let driver = await new Builder().forBrowser("chrome").build();
+(async () => {
+    let driver;
 
     try {
+        driver = await new Builder().forBrowser("chrome").build();
+
         await driver.get("http://localhost:3000");
 
-        await driver.wait(until.elementLocated(By.tagName("body")), 10000);
+        await driver.wait(
+            until.elementLocated(By.tagName("h1")),
+            10000
+        );
 
-        const title = await driver.getTitle();
-        console.log("Page title:", title);
+        const heading = await driver.findElement(By.tagName("h1")).getText();
 
-        const body = await driver.findElement(By.tagName("body")).getText();
-        assert(body.length > 0, "Application page should not be empty");
+        assert.strictEqual(
+            heading,
+            "Student Attendance Management System"
+        );
 
-        console.log("PASS: Attendance application opened successfully.");
+        const page = await driver.findElement(By.tagName("body")).getText();
+
+        assert(page.includes("Add Student"));
+        assert(page.includes("Mark Daily Attendance"));
+        assert(page.includes("Monthly Attendance Report"));
+
+        console.log("PASS: Application title verified.");
+        console.log("PASS: Student management section verified.");
+        console.log("PASS: Attendance section verified.");
+        console.log("PASS: Monthly report section verified.");
     } catch (error) {
         console.error("FAIL:", error.message);
         process.exitCode = 1;
     } finally {
-        await driver.quit();
+        if (driver) await driver.quit();
     }
 })();
